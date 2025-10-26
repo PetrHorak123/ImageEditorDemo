@@ -1,24 +1,30 @@
+using CommunityToolkit.Mvvm.ComponentModel;
+
 namespace ImageEditorDemo.Models;
 
 /// <summary>
 /// Parameters for various image filters
+/// Observable to support live preview when slider values change.
 /// </summary>
-public class FilterParameters
+public partial class FilterParameters : ObservableObject
 {
     /// <summary>
     /// Brightness adjustment (-100 to +100)
     /// </summary>
-    public double Brightness { get; set; } = 0;
+    [ObservableProperty]
+    private double _brightness = 0;
 
     /// <summary>
     /// Contrast adjustment (-100 to +100)
     /// </summary>
-    public double Contrast { get; set; } = 0;
+    [ObservableProperty]
+    private double _contrast = 0;
 
     /// <summary>
     /// Blur radius for Gaussian blur (1-10)
     /// </summary>
-    public int BlurRadius { get; set; } = 3;
+    [ObservableProperty]
+    private int _blurRadius = 3;
 
     /// <summary>
     /// Creates a copy of the parameters
