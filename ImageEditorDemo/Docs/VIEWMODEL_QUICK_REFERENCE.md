@@ -1,4 +1,4 @@
-# MainViewModel Quick Reference
+﻿# MainViewModel Quick Reference
 
 ## Constructor
 
@@ -227,19 +227,19 @@ private async void Window_Loaded(object sender, RoutedEventArgs e)
 
 ```
 User moves slider
-    ?
+    ↓
 FilterParameters.Brightness changes
-    ?
+    ↓
 PropertyChanged event fires
-    ?
+    ↓
 ViewModel's event handler triggered
- ?
+    ↓
 ApplyCurrentFilterAsync() called (if applicable)
-    ?
+    ↓
 Filter applied automatically (live preview)
-    ?
+    ↓
 CurrentImage updates
- ?
+    ↓
 UI refreshes (via binding)
 ```
 
