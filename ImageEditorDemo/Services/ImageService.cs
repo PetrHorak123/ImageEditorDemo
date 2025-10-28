@@ -51,6 +51,15 @@ public class ImageService : IImageService
     /// </summary>
     public async Task<bool> SaveImageAsync(WriteableBitmap bitmap, string filePath, int quality = 95)
     {
+        // Extract bitmap data on UI thread before Task.Run
+        int width = bitmap.PixelWidth;
+        int height = bitmap.PixelHeight;
+        double dpiX = bitmap.DpiX;
+        double dpiY = bitmap.DpiY;
+        var format = bitmap.Format;
+        var palette = bitmap.Palette;
+        var pixels = GetPixelBytes(bitmap);
+
         return await Task.Run(() =>
         {
             try
@@ -66,8 +75,13 @@ public class ImageService : IImageService
                     _ => new PngBitmapEncoder() // Default to PNG
                 };
 
+                // Create a new bitmap on background thread using extracted data
+                var bitmapToSave = new WriteableBitmap(width, height, dpiX, dpiY, format, palette);
+                SetPixelBytes(bitmapToSave, pixels);
+                bitmapToSave.Freeze(); // Make thread-safe
+
                 // Save to file
-                encoder.Frames.Add(BitmapFrame.Create(bitmap));
+                encoder.Frames.Add(BitmapFrame.Create(bitmapToSave));
                 using var stream = new FileStream(filePath, FileMode.Create);
                 encoder.Save(stream);
 
@@ -420,11 +434,11 @@ public class ImageService : IImageService
     {
         // Extract pixel data on the calling thread (UI thread)
         var pixels = GetPixelBytes(bitmap);
-        
+
         return await Task.Run(() =>
         {
             var histogram = new ImageHistogram();
-            
+
             // Count occurrences of each intensity value (0-255) for each channel
             for (int i = 0; i < pixels.Length; i += 4)
             {
@@ -437,7 +451,7 @@ public class ImageService : IImageService
             histogram.MaxValue = Math.Max(
                 histogram.RedChannel.Max(),
                 Math.Max(histogram.GreenChannel.Max(), histogram.BlueChannel.Max()));
-            
+
             return histogram;
         });
     }
@@ -484,8 +498,8 @@ public class ImageService : IImageService
         int stride = bitmap.PixelWidth * 4;
         bitmap.WritePixels(
             new Int32Rect(0, 0, bitmap.PixelWidth, bitmap.PixelHeight),
-            pixels, 
-            stride, 
+            pixels,
+            stride,
             0);
     }
 

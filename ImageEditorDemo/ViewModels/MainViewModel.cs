@@ -216,6 +216,8 @@ namespace ImageEditorDemo.ViewModels
             {
                 IsProcessing = false;
             }
+
+            NotifyEverythingChanged();
         }
 
         /// <summary>
@@ -264,6 +266,8 @@ namespace ImageEditorDemo.ViewModels
             {
                 IsProcessing = false;
             }
+
+            NotifyEverythingChanged();
         }
 
         private bool CanSaveImage() => CurrentImage != null && !IsProcessing;
@@ -302,6 +306,8 @@ namespace ImageEditorDemo.ViewModels
             {
                 IsProcessing = false;
             }
+
+            NotifyEverythingChanged();
         }
 
         private bool CanResetImage() => OriginalImage != null && !IsProcessing;
@@ -350,6 +356,8 @@ namespace ImageEditorDemo.ViewModels
             {
                 IsProcessing = false;
             }
+
+            NotifyEverythingChanged();
         }
 
         private bool CanApplyFilter() => CurrentImage != null && SelectedFilter != FilterType.None && !IsProcessing;
@@ -403,6 +411,8 @@ namespace ImageEditorDemo.ViewModels
             {
                 IsProcessing = false;
             }
+
+            NotifyEverythingChanged();
         }
 
         /// <summary>
@@ -420,7 +430,7 @@ namespace ImageEditorDemo.ViewModels
                 StatusMessage = "Redoing...";
 
                 // Push current state to undo stack
-                PushToUndoStack(CurrentImage);
+                PushToUndoStack(CurrentImage, false);
 
                 // Pop from redo stack
                 CurrentImage = _redoStack.Pop();
@@ -438,6 +448,8 @@ namespace ImageEditorDemo.ViewModels
             {
                 IsProcessing = false;
             }
+
+            NotifyEverythingChanged();
         }
 
         #endregion
@@ -448,10 +460,13 @@ namespace ImageEditorDemo.ViewModels
         /// Pushes current image state to the undo stack.
         /// Manages stack size to prevent excessive memory usage.
         /// </summary>
-        private void PushToUndoStack(WriteableBitmap image)
+        private void PushToUndoStack(WriteableBitmap image, bool clearRedoStack = true)
         {
             // Clear redo stack when new action is performed
-            _redoStack.Clear();
+            if (clearRedoStack)
+            {
+                _redoStack.Clear();
+            }
 
             // Clone and push to undo stack
             _undoStack.Push(_imageService.CloneBitmap(image));
@@ -493,6 +508,15 @@ namespace ImageEditorDemo.ViewModels
                 // Silently fail histogram update - it's not critical
                 CurrentHistogram = null;
             }
+        }
+
+        private void NotifyEverythingChanged()
+        {
+            SaveImageCommand.NotifyCanExecuteChanged();
+            ResetImageCommand.NotifyCanExecuteChanged();
+            ApplyFilterCommand.NotifyCanExecuteChanged();
+            UndoCommand.NotifyCanExecuteChanged();
+            RedoCommand.NotifyCanExecuteChanged();
         }
 
         #endregion
