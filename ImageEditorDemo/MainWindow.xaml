@@ -4,9 +4,340 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:ImageEditorDemo"
+        xmlns:converters="clr-namespace:ImageEditorDemo.Converters"
+     xmlns:models="clr-namespace:ImageEditorDemo.Models"
         mc:Ignorable="d"
-        Title="MainWindow" Height="450" Width="800">
-    <Grid>
+        Title="Image Editor Demo - Multimedia Technologies" 
+Height="800" Width="1400"
+      MinHeight="600" MinWidth="1000"
+        WindowStartupLocation="CenterScreen">
 
+    <!-- Value Converters -->
+    <Window.Resources>
+        <converters:BoolToVisibilityConverter x:Key="BoolToVis"/>
+        <converters:InverseBoolToVisibilityConverter x:Key="InverseBoolToVis"/>
+        <converters:InverseBoolConverter x:Key="InverseBool"/>
+        <converters:NullToVisibilityConverter x:Key="NullToVis"/>
+
+        <!-- Style for toolbar buttons -->
+        <Style x:Key="ToolbarButtonStyle" TargetType="Button">
+            <Setter Property="Margin" Value="2"/>
+            <Setter Property="Padding" Value="10,5"/>
+            <Setter Property="MinWidth" Value="80"/>
+            <Setter Property="Background" Value="#F5F5F5"/>
+            <Setter Property="BorderBrush" Value="#CCCCCC"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#E0E0E0"/>
+                </Trigger>
+                <Trigger Property="IsEnabled" Value="False">
+                    <Setter Property="Opacity" Value="0.5"/>
+                    <Setter Property="Cursor" Value="Arrow"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- Style for section headers -->
+        <Style x:Key="SectionHeaderStyle" TargetType="TextBlock">
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="Margin" Value="0,10,0,5"/>
+            <Setter Property="Foreground" Value="#333333"/>
+        </Style>
+    </Window.Resources>
+
+    <!-- Keyboard Shortcuts -->
+    <Window.InputBindings>
+        <KeyBinding Key="O" Modifiers="Ctrl" Command="{Binding OpenImageCommand}"/>
+        <KeyBinding Key="S" Modifiers="Ctrl" Command="{Binding SaveImageCommand}"/>
+        <KeyBinding Key="Z" Modifiers="Ctrl" Command="{Binding UndoCommand}"/>
+        <KeyBinding Key="Y" Modifiers="Ctrl" Command="{Binding RedoCommand}"/>
+    </Window.InputBindings>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <!-- Toolbar -->
+            <RowDefinition Height="*"/>
+            <!-- Main Content -->
+            <RowDefinition Height="Auto"/>
+            <!-- Status Bar -->
+        </Grid.RowDefinitions>
+
+        <!-- Toolbar -->
+        <Border Grid.Row="0" Background="#F0F0F0" BorderBrush="#CCCCCC" BorderThickness="0,0,0,1" Padding="10,5">
+            <StackPanel Orientation="Horizontal">
+                <!-- File Operations -->
+                <Button Content="📁 Open" 
+    Command="{Binding OpenImageCommand}"
+        Style="{StaticResource ToolbarButtonStyle}"
+    ToolTip="Open Image (Ctrl+O)"/>
+
+                <Button Content="💾 Save" 
+    Command="{Binding SaveImageCommand}"
+        Style="{StaticResource ToolbarButtonStyle}"
+          ToolTip="Save Image (Ctrl+S)"/>
+
+                <Separator Width="1" Margin="10,0" Background="#CCCCCC"/>
+
+                <!-- Edit Operations -->
+                <Button Content="↶ Undo" 
+            Command="{Binding UndoCommand}"
+       Style="{StaticResource ToolbarButtonStyle}"
+      ToolTip="Undo (Ctrl+Z)"/>
+
+                <Button Content="↷ Redo" 
+      Command="{Binding RedoCommand}"
+        Style="{StaticResource ToolbarButtonStyle}"
+          ToolTip="Redo (Ctrl+Y)"/>
+
+                <Button Content="🔄 Reset" 
+        Command="{Binding ResetImageCommand}"
+   Style="{StaticResource ToolbarButtonStyle}"
+             ToolTip="Reset to Original"/>
+
+                <Separator Width="1" Margin="10,0" Background="#CCCCCC"/>
+
+                <!-- Unsaved Changes Indicator -->
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="10,0"
+ Visibility="{Binding HasUnsavedChanges, Converter={StaticResource BoolToVis}}">
+                    <TextBlock Text="●" 
+             Foreground="OrangeRed" 
+        FontSize="16"
+         Margin="0,0,5,0"
+    ToolTip="Unsaved changes"/>
+                    <TextBlock Text="{Binding CurrentFilePath, FallbackValue='No image loaded'}" 
+         Foreground="#555555"/>
+                </StackPanel>
+            </StackPanel>
+        </Border>
+
+        <!-- Main Content Area -->
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="300" MinWidth="250"/>
+                <!-- Filter Panel -->
+                <ColumnDefinition Width="5"/>
+                <!-- Splitter -->
+                <ColumnDefinition Width="*" MinWidth="400"/>
+                <!-- Image Area -->
+            </Grid.ColumnDefinitions>
+
+            <!-- Left Panel - Filter Controls -->
+            <Border Grid.Column="0" Background="#FAFAFA" BorderBrush="#E0E0E0" BorderThickness="0,0,1,0" Padding="15">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel>
+                        <!-- Filter Selection -->
+                        <TextBlock Text="🎨 Filters" Style="{StaticResource SectionHeaderStyle}"/>
+
+                        <ComboBox ItemsSource="{Binding AvailableFilters}"
+         SelectedItem="{Binding SelectedFilter}"
+          Margin="0,5"
+ Padding="8,5"
+      FontSize="13"
+  IsEnabled="{Binding IsProcessing, Converter={StaticResource InverseBool}}">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding}"/>
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+
+                        <!-- Apply Button -->
+                        <Button Content="✓ Apply Filter" 
+   Command="{Binding ApplyFilterCommand}"
+     Style="{StaticResource ToolbarButtonStyle}"
+      HorizontalAlignment="Stretch"
+  Margin="0,5"
+    Padding="10,8"
+  FontWeight="Bold"
+  Background="#4CAF50"
+   BorderBrush="#45A049"/>
+
+                        <!-- Filter Parameters -->
+                        <TextBlock Text="⚙️ Parameters" 
+  Style="{StaticResource SectionHeaderStyle}"
+        Visibility="{Binding SelectedFilter, Converter={StaticResource NullToVis}}"/>
+
+                        <!-- Brightness Slider -->
+                        <GroupBox Header="Brightness" Margin="0,10,0,5" Padding="10">
+                            <StackPanel>
+                                <Slider Value="{Binding FilterParameters.Brightness, Mode=TwoWay}"
+    Minimum="-100" Maximum="100"
+            TickFrequency="10"
+     TickPlacement="BottomRight"
+      IsSnapToTickEnabled="False"
+              IsEnabled="{Binding IsProcessing, Converter={StaticResource InverseBool}}"
+              AutoToolTipPlacement="TopLeft"
+           AutoToolTipPrecision="0"/>
+                                <TextBlock HorizontalAlignment="Center" Margin="0,5,0,0">
+    <Run Text="Value: "/>
+           <Run Text="{Binding FilterParameters.Brightness, StringFormat='{}{0:F0}'}" FontWeight="Bold"/>
+                                </TextBlock>
+                            </StackPanel>
+                        </GroupBox>
+
+                        <!-- Contrast Slider -->
+                        <GroupBox Header="Contrast" Margin="0,5" Padding="10">
+                            <StackPanel>
+                                <Slider Value="{Binding FilterParameters.Contrast, Mode=TwoWay}"
+    Minimum="-100" Maximum="100"
+     TickFrequency="10"
+           TickPlacement="BottomRight"
+        IsSnapToTickEnabled="False"
+       IsEnabled="{Binding IsProcessing, Converter={StaticResource InverseBool}}"
+     AutoToolTipPlacement="TopLeft"
+   AutoToolTipPrecision="0"/>
+                                <TextBlock HorizontalAlignment="Center" Margin="0,5,0,0">
+          <Run Text="Value: "/>
+     <Run Text="{Binding FilterParameters.Contrast, StringFormat='{}{0:F0}'}" FontWeight="Bold"/>
+                                </TextBlock>
+                            </StackPanel>
+                        </GroupBox>
+
+                        <!-- Blur Radius Slider -->
+                        <GroupBox Header="Blur Radius" Margin="0,5" Padding="10">
+                            <StackPanel>
+                                <Slider Value="{Binding FilterParameters.BlurRadius, Mode=TwoWay}"
+   Minimum="1" Maximum="10"
+      TickFrequency="1"
+       TickPlacement="BottomRight"
+       IsSnapToTickEnabled="True"
+        IsEnabled="{Binding IsProcessing, Converter={StaticResource InverseBool}}"
+          AutoToolTipPlacement="TopLeft"/>
+                                <TextBlock HorizontalAlignment="Center" Margin="0,5,0,0">
+            <Run Text="Value: "/>
+ <Run Text="{Binding FilterParameters.BlurRadius}" FontWeight="Bold"/>
+                                </TextBlock>
+                            </StackPanel>
+                        </GroupBox>
+
+                        <!-- Info Panel -->
+                        <Border Background="#E3F2FD" 
+      BorderBrush="#2196F3" 
+          BorderThickness="1" 
+            CornerRadius="5" 
+         Padding="10" 
+         Margin="0,20,0,0">
+                            <StackPanel>
+                                <TextBlock Text="ℹ️ Tips" FontWeight="Bold" Foreground="#1976D2" Margin="0,0,0,5"/>
+                                <TextBlock TextWrapping="Wrap" FontSize="11" Foreground="#555">
+               • Brightness/Contrast filters auto-apply on slider change<LineBreak/>
+       • Use Undo/Redo to navigate changes<LineBreak/>
+       • All filters work on pixel level<LineBreak/>
+        • Ctrl+O: Open, Ctrl+S: Save
+                                </TextBlock>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </Border>
+
+            <!-- Splitter -->
+            <GridSplitter Grid.Column="1" 
+Width="5" 
+      HorizontalAlignment="Stretch" 
+             Background="#E0E0E0"/>
+
+            <!-- Right Panel - Image Display -->
+            <Grid Grid.Column="2" Background="#2E2E2E">
+                <!-- Image Container -->
+                <Border Margin="20" 
+          Background="White" 
+   BorderBrush="#555555" 
+  BorderThickness="2"
+   CornerRadius="5"
+    Visibility="{Binding CurrentImage, Converter={StaticResource NullToVis}}">
+                    <Image Source="{Binding CurrentImage}" 
+ Stretch="Uniform"
+ RenderOptions.BitmapScalingMode="HighQuality">
+                        <Image.ContextMenu>
+                            <ContextMenu>
+                                <MenuItem Header="Reset to Original" Command="{Binding ResetImageCommand}"/>
+                                <Separator/>
+                                <MenuItem Header="Undo" Command="{Binding UndoCommand}"/>
+                                <MenuItem Header="Redo" Command="{Binding RedoCommand}"/>
+                            </ContextMenu>
+                        </Image.ContextMenu>
+                    </Image>
+                </Border>
+
+                <!-- Placeholder when no image loaded -->
+                <StackPanel VerticalAlignment="Center" 
+     HorizontalAlignment="Center">
+                    <StackPanel.Style>
+                        <Style TargetType="StackPanel">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding CurrentImage}" Value="{x:Null}">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </StackPanel.Style>
+                    <TextBlock Text="📷" 
+       FontSize="80" 
+   HorizontalAlignment="Center" 
+        Foreground="#888888"
+    Margin="0,0,0,20"/>
+                    <TextBlock Text="No Image Loaded" 
+   FontSize="24" 
+         FontWeight="Light"
+      HorizontalAlignment="Center" 
+ Foreground="#AAAAAA"
+     Margin="0,0,0,10"/>
+                    <TextBlock Text="Click 'Open' or press Ctrl+O to load an image" 
+     FontSize="14" 
+     HorizontalAlignment="Center" 
+         Foreground="#888888"/>
+                </StackPanel>
+
+                <!-- Loading Overlay -->
+                <Border Background="#AA000000" 
+         Visibility="{Binding IsProcessing, Converter={StaticResource BoolToVis}}">
+                    <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                        <ProgressBar IsIndeterminate="True" 
+    Width="200" 
+    Height="10"
+            Margin="0,0,0,15"/>
+                        <TextBlock Text="{Binding StatusMessage}" 
+         Foreground="White" 
+       FontSize="16"
+             HorizontalAlignment="Center"/>
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </Grid>
+
+        <!-- Status Bar -->
+        <Border Grid.Row="2" Background="#F0F0F0" BorderBrush="#CCCCCC" BorderThickness="0,1,0,0" Padding="10,5">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- Status Message -->
+                <TextBlock Grid.Column="0" 
+                Text="{Binding StatusMessage}" 
+ VerticalAlignment="Center"
+           FontSize="12"
+       Foreground="#555555"/>
+
+                <!-- Image Info -->
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center"
+        Visibility="{Binding CurrentImage, Converter={StaticResource NullToVis}}">
+                    <TextBlock FontSize="11"
+    Foreground="#777777">
+            <Run Text="Image: "/>
+    <Run Text="{Binding CurrentImage.PixelWidth, Mode=OneWay, FallbackValue=0}"/>
+     <Run Text="×"/>
+        <Run Text="{Binding CurrentImage.PixelHeight, Mode=OneWay, FallbackValue=0}"/>
+                    </TextBlock>
+                </StackPanel>
+            </Grid>
+        </Border>
     </Grid>
 </Window>

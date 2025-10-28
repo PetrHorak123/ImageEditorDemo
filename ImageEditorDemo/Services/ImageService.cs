@@ -90,20 +90,37 @@ public class ImageService : IImageService
     /// </summary>
     public async Task<WriteableBitmap> ApplyFilterAsync(WriteableBitmap source, FilterType filterType, FilterParameters parameters)
     {
+        // Extract all necessary data on the UI thread before Task.Run
+        int width = source.PixelWidth;
+        int height = source.PixelHeight;
+        double dpiX = source.DpiX;
+        double dpiY = source.DpiY;
+        var format = source.Format;
+        var palette = source.Palette;
+        var sourcePixels = GetPixelBytes(source);
+
         return await Task.Run(() =>
-          {
-              return filterType switch
-              {
-                  FilterType.Grayscale => ApplyGrayscale(source),
-                  FilterType.Brightness => ApplyBrightness(source, parameters.Brightness),
-                  FilterType.Contrast => ApplyContrast(source, parameters.Contrast),
-                  FilterType.BrightnessContrast => ApplyBrightnessContrast(source, parameters.Brightness, parameters.Contrast),
-                  FilterType.GaussianBlur => ApplyGaussianBlur(source, parameters.BlurRadius),
-                  FilterType.EdgeDetection => ApplyEdgeDetection(source),
-                  FilterType.Sepia => ApplySepia(source),
-                  _ => CloneBitmap(source)
-              };
-          });
+        {
+            // Process pixels on background thread
+            byte[] processedPixels = filterType switch
+            {
+                FilterType.Grayscale => ApplyGrayscaleToPixels(sourcePixels),
+                FilterType.Brightness => ApplyBrightnessToPixels(sourcePixels, parameters.Brightness),
+                FilterType.Contrast => ApplyContrastToPixels(sourcePixels, parameters.Contrast),
+                FilterType.BrightnessContrast => ApplyBrightnessContrastToPixels(sourcePixels, parameters.Brightness, parameters.Contrast),
+                FilterType.GaussianBlur => ApplyGaussianBlurToPixels(sourcePixels, width, height, parameters.BlurRadius),
+                FilterType.EdgeDetection => ApplyEdgeDetectionToPixels(sourcePixels, width, height),
+                FilterType.Sepia => ApplySepiaToPixels(sourcePixels),
+                _ => sourcePixels
+            };
+
+            // Create result bitmap on background thread using extracted metadata
+            var result = new WriteableBitmap(width, height, dpiX, dpiY, format, palette);
+            SetPixelBytes(result, processedPixels);
+            result.Freeze(); // Make thread-safe for return to UI thread
+
+            return result;
+        });
     }
 
     #endregion
@@ -114,29 +131,28 @@ public class ImageService : IImageService
     /// Converts image to grayscale using luminosity method.
     /// Formula: Gray = 0.299*R + 0.587*G + 0.114*B (weighted for human eye sensitivity)
     /// </summary>
-    private WriteableBitmap ApplyGrayscale(WriteableBitmap source)
+    private byte[] ApplyGrayscaleToPixels(byte[] sourcePixels)
     {
-        var result = CloneBitmap(source);
-        var pixels = GetPixelBytes(result);
+        var result = new byte[sourcePixels.Length];
+        Array.Copy(sourcePixels, result, sourcePixels.Length);
 
         // Process each pixel (4 bytes: B, G, R, A in Pbgra32 format)
-        for (int i = 0; i < pixels.Length; i += 4)
+        for (int i = 0; i < result.Length; i += 4)
         {
-            byte blue = pixels[i];
-            byte green = pixels[i + 1];
-            byte red = pixels[i + 2];
-            // Alpha channel at pixels[i + 3] remains unchanged
+            byte blue = result[i];
+            byte green = result[i + 1];
+            byte red = result[i + 2];
+            // Alpha channel at result[i + 3] remains unchanged
 
             // Calculate grayscale value using luminosity method
             byte gray = (byte)(0.114 * blue + 0.587 * green + 0.299 * red);
 
             // Set all RGB channels to the same gray value
-            pixels[i] = gray;     // Blue
-            pixels[i + 1] = gray; // Green
-            pixels[i + 2] = gray; // Red
+            result[i] = gray;     // Blue
+            result[i + 1] = gray; // Green
+            result[i + 2] = gray; // Red
         }
 
-        SetPixelBytes(result, pixels);
         return result;
     }
 
@@ -144,23 +160,22 @@ public class ImageService : IImageService
     /// Adjusts image brightness by adding a constant value to each pixel.
     /// </summary>
     /// <param name="brightness">Brightness adjustment (-100 to +100)</param>
-    private WriteableBitmap ApplyBrightness(WriteableBitmap source, double brightness)
+    private byte[] ApplyBrightnessToPixels(byte[] sourcePixels, double brightness)
     {
-        var result = CloneBitmap(source);
-        var pixels = GetPixelBytes(result);
+        var result = new byte[sourcePixels.Length];
+        Array.Copy(sourcePixels, result, sourcePixels.Length);
 
         // Convert brightness from -100..100 to -255..255 range
         int adjustment = (int)(brightness * 2.55);
 
-        for (int i = 0; i < pixels.Length; i += 4)
+        for (int i = 0; i < result.Length; i += 4)
         {
             // Apply brightness to RGB channels, skip alpha
-            pixels[i] = ClampByte(pixels[i] + adjustment);     // Blue
-            pixels[i + 1] = ClampByte(pixels[i + 1] + adjustment); // Green
-            pixels[i + 2] = ClampByte(pixels[i + 2] + adjustment); // Red
+            result[i] = ClampByte(result[i] + adjustment);     // Blue
+            result[i + 1] = ClampByte(result[i + 1] + adjustment); // Green
+            result[i + 2] = ClampByte(result[i + 2] + adjustment); // Red
         }
 
-        SetPixelBytes(result, pixels);
         return result;
     }
 
@@ -168,10 +183,10 @@ public class ImageService : IImageService
     /// Adjusts image contrast using the formula: newValue = factor * (value - 128) + 128
     /// </summary>
     /// <param name="contrast">Contrast adjustment (-100 to +100)</param>
-    private WriteableBitmap ApplyContrast(WriteableBitmap source, double contrast)
+    private byte[] ApplyContrastToPixels(byte[] sourcePixels, double contrast)
     {
-        var result = CloneBitmap(source);
-        var pixels = GetPixelBytes(result);
+        var result = new byte[sourcePixels.Length];
+        Array.Copy(sourcePixels, result, sourcePixels.Length);
 
         // Calculate contrast factor
         // Contrast value of 0 means no change (factor = 1)
@@ -179,39 +194,37 @@ public class ImageService : IImageService
         double factor = (100.0 + contrast) / 100.0;
         factor = Math.Max(0, factor); // Ensure non-negative
 
-        for (int i = 0; i < pixels.Length; i += 4)
+        for (int i = 0; i < result.Length; i += 4)
         {
             // Apply contrast formula to RGB channels
-            pixels[i] = ClampByte((int)(factor * (pixels[i] - 128) + 128));     // Blue
-            pixels[i + 1] = ClampByte((int)(factor * (pixels[i + 1] - 128) + 128)); // Green
-            pixels[i + 2] = ClampByte((int)(factor * (pixels[i + 2] - 128) + 128)); // Red
+            result[i] = ClampByte((int)(factor * (result[i] - 128) + 128));     // Blue
+            result[i + 1] = ClampByte((int)(factor * (result[i + 1] - 128) + 128)); // Green
+            result[i + 2] = ClampByte((int)(factor * (result[i + 2] - 128) + 128)); // Red
         }
 
-        SetPixelBytes(result, pixels);
         return result;
     }
 
     /// <summary>
     /// Applies both brightness and contrast adjustments in a single pass for efficiency.
     /// </summary>
-    private WriteableBitmap ApplyBrightnessContrast(WriteableBitmap source, double brightness, double contrast)
+    private byte[] ApplyBrightnessContrastToPixels(byte[] sourcePixels, double brightness, double contrast)
     {
-        var result = CloneBitmap(source);
-        var pixels = GetPixelBytes(result);
+        var result = new byte[sourcePixels.Length];
+        Array.Copy(sourcePixels, result, sourcePixels.Length);
 
         int brightnessAdj = (int)(brightness * 2.55);
         double contrastFactor = (100.0 + contrast) / 100.0;
         contrastFactor = Math.Max(0, contrastFactor);
 
-        for (int i = 0; i < pixels.Length; i += 4)
+        for (int i = 0; i < result.Length; i += 4)
         {
             // Apply contrast first, then brightness
-            pixels[i] = ClampByte((int)(contrastFactor * (pixels[i] - 128) + 128 + brightnessAdj));
-            pixels[i + 1] = ClampByte((int)(contrastFactor * (pixels[i + 1] - 128) + 128 + brightnessAdj));
-            pixels[i + 2] = ClampByte((int)(contrastFactor * (pixels[i + 2] - 128) + 128 + brightnessAdj));
+            result[i] = ClampByte((int)(contrastFactor * (result[i] - 128) + 128 + brightnessAdj));
+            result[i + 1] = ClampByte((int)(contrastFactor * (result[i + 1] - 128) + 128 + brightnessAdj));
+            result[i + 2] = ClampByte((int)(contrastFactor * (result[i + 2] - 128) + 128 + brightnessAdj));
         }
 
-        SetPixelBytes(result, pixels);
         return result;
     }
 
@@ -219,14 +232,17 @@ public class ImageService : IImageService
     /// Applies Gaussian blur using a separable kernel for efficiency.
     /// This is a simplified approximation using box blur passes.
     /// </summary>
-    private WriteableBitmap ApplyGaussianBlur(WriteableBitmap source, int radius)
+    private byte[] ApplyGaussianBlurToPixels(byte[] sourcePixels, int width, int height, int radius)
     {
-        if (radius <= 0) return CloneBitmap(source);
+        if (radius <= 0)
+        {
+            var result = new byte[sourcePixels.Length];
+            Array.Copy(sourcePixels, result, sourcePixels.Length);
+            return result;
+        }
 
-        var result = CloneBitmap(source);
-        int width = result.PixelWidth;
-        int height = result.PixelHeight;
-        var pixels = GetPixelBytes(result);
+        var pixels = new byte[sourcePixels.Length];
+        Array.Copy(sourcePixels, pixels, sourcePixels.Length);
 
         // Apply multiple passes of box blur to approximate Gaussian blur
         // More passes = smoother blur but slower
@@ -236,8 +252,7 @@ public class ImageService : IImageService
             pixels = BoxBlur(pixels, width, height, radius);
         }
 
-        SetPixelBytes(result, pixels);
-        return result;
+        return pixels;
     }
 
     /// <summary>
@@ -316,16 +331,11 @@ public class ImageService : IImageService
     /// Applies edge detection using Sobel operator.
     /// Detects horizontal and vertical edges and combines them.
     /// </summary>
-    private WriteableBitmap ApplyEdgeDetection(WriteableBitmap source)
+    private byte[] ApplyEdgeDetectionToPixels(byte[] sourcePixels, int width, int height)
     {
         // First convert to grayscale for simpler edge detection
-        var grayscale = ApplyGrayscale(source);
-        var result = CloneBitmap(grayscale);
-
-        int width = result.PixelWidth;
-        int height = result.PixelHeight;
-        var pixels = GetPixelBytes(grayscale);
-        var output = new byte[pixels.Length];
+        var grayscalePixels = ApplyGrayscaleToPixels(sourcePixels);
+        var output = new byte[grayscalePixels.Length];
 
         int stride = width * 4;
 
@@ -347,7 +357,7 @@ public class ImageService : IImageService
                     for (int kx = -1; kx <= 1; kx++)
                     {
                         int idx = ((y + ky) * stride) + ((x + kx) * 4);
-                        byte pixelValue = pixels[idx]; // Using blue channel (they're all the same in grayscale)
+                        byte pixelValue = grayscalePixels[idx]; // Using blue channel (they're all the same in grayscale)
 
                         gx += pixelValue * sobelX[ky + 1, kx + 1];
                         gy += pixelValue * sobelY[ky + 1, kx + 1];
@@ -366,24 +376,23 @@ public class ImageService : IImageService
             }
         }
 
-        SetPixelBytes(result, output);
-        return result;
+        return output;
     }
 
     /// <summary>
     /// Applies sepia tone effect (warm, vintage look).
     /// Uses a standard sepia transformation matrix.
     /// </summary>
-    private WriteableBitmap ApplySepia(WriteableBitmap source)
+    private byte[] ApplySepiaToPixels(byte[] sourcePixels)
     {
-        var result = CloneBitmap(source);
-        var pixels = GetPixelBytes(result);
+        var result = new byte[sourcePixels.Length];
+        Array.Copy(sourcePixels, result, sourcePixels.Length);
 
-        for (int i = 0; i < pixels.Length; i += 4)
+        for (int i = 0; i < result.Length; i += 4)
         {
-            byte blue = pixels[i];
-            byte green = pixels[i + 1];
-            byte red = pixels[i + 2];
+            byte blue = result[i];
+            byte green = result[i + 1];
+            byte red = result[i + 2];
 
             // Sepia transformation matrix
             // These coefficients create the characteristic warm brown tone
@@ -391,12 +400,11 @@ public class ImageService : IImageService
             int newGreen = (int)(0.349 * red + 0.686 * green + 0.168 * blue);
             int newBlue = (int)(0.272 * red + 0.534 * green + 0.131 * blue);
 
-            pixels[i] = ClampByte(newBlue);
-            pixels[i + 1] = ClampByte(newGreen);
-            pixels[i + 2] = ClampByte(newRed);
+            result[i] = ClampByte(newBlue);
+            result[i + 1] = ClampByte(newGreen);
+            result[i + 2] = ClampByte(newRed);
         }
 
-        SetPixelBytes(result, pixels);
         return result;
     }
 
@@ -410,11 +418,13 @@ public class ImageService : IImageService
     /// </summary>
     public async Task<ImageHistogram> CalculateHistogramAsync(WriteableBitmap bitmap)
     {
+        // Extract pixel data on the calling thread (UI thread)
+        var pixels = GetPixelBytes(bitmap);
+        
         return await Task.Run(() =>
         {
             var histogram = new ImageHistogram();
-            var pixels = GetPixelBytes(bitmap);
-
+            
             // Count occurrences of each intensity value (0-255) for each channel
             for (int i = 0; i < pixels.Length; i += 4)
             {
